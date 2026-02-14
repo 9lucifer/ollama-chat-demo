@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSeek 智能对话</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --bg-body: #f8fafc;
+            --bg-chat: #ffffff;
+            --text-main: #1e293b;
+            --text-sec: #64748b;
+            --border-color: #e2e8f0;
+            --thinking-bg: #f1f5f9;
+            --user-bubble: #2563eb;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif;
+            background-color: var(--bg-body);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            color: var(--text-main);
+        }
+
+        .chat-container {
+            width: 100%;
+            max-width: 1000px;
+            height: 100vh;
+            background: var(--bg-chat);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* 顶部导航 */
+        .chat-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #fff;
+        }
+
+        .chat-header .title {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: var(--primary-color);
+        }
+
+        .model-selector select {
+            padding: 6px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        /* 消息列表区域 */
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px 10% 120px;
+        }
+
+        .message {
+            margin-bottom: 24px;
+            display: flex;
+            gap: 16px;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user { flex-direction: row-reverse; }
+
+        .message-content {
+            max-width: 85%;
+            padding: 12px 18px;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        .message.user .message-content {
+            background-color: var(--user-bubble);
+            color: #fff;
+            border-radius: 20px 20px 4px 20px;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+        }
+
+        .message.assistant .message-content {
+            background-color: transparent;
+            width: 100%;
+        }
+
+        /* 思考过程卡片 */
+        .thinking-section {
+            background: var(--thinking-bg);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            border-left: 3px solid #cbd5e1;
+        }
+
+        .thinking-header {
+            font-size: 12px;
+            color: var(--text-sec);
+            font-weight: 600;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .thinking-content {
+            font-size: 13px;
+            color: #475569;
+            font-style: italic;
+            line-height: 1.5;
+        }
+
+        .thinking-content.collapsed { display: none; }
+
+        /* Markdown 内容微调 */
+        .answer-section p { margin-bottom: 12px; }
+        .answer-section pre { margin: 16px 0; border-radius: 8px; overflow: hidden; }
+        .answer-section code { font-family: "Fira Code", monospace; font-size: 14px; }
+
+        /* 底部输入框 */
+        .chat-input-container {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            padding: 24px 10%;
+            background: linear-gradient(transparent, white 40%);
+        }
+
+        .input-wrapper {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            background: #fff;
+            border: 1px solid var(--border-color);
+            padding: 10px 16px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        }
+
+        .chat-input {
+            flex: 1;
+            border: none;
+            outline: none;
+            padding: 8px 0;
+            font-size: 15px;
+            max-height: 150px;
+            resize: none;
+        }
+
+        .send-button {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+
+        .send-button:hover { transform: scale(1.1); }
+        .send-button:disabled { filter: grayscale(1); opacity: 0.5; }
+
+        /* 滚动条 */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+    </style>
+</head>
+<body>
+<div class="chat-container">
+    <div class="chat-header">
+        <div class="title">DeepSeek R1</div>
+        <div class="model-selector">
+            <select id="modelSelect">
+                <option value="deepseek">DeepSeek-R1</option>
+                <option value="qwen">Qwen2.5</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="chat-messages" id="chatMessages">
+        <div class="message assistant">
+            <div class="message-content">
+                <div class="answer-section">你好！我是你的 AI 助手，今天想聊点什么？</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-input-container">
+        <div class="input-wrapper">
+                <textarea
+                        id="messageInput"
+                        class="chat-input"
+                        placeholder="输入问题..."
+                        rows="1"
+                ></textarea>
+            <button class="send-button" id="sendButton" onclick="sendMessage()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const chatMessages = document.getElementById('chatMessages');
+    const messageInput = document.getElementById('messageInput');
+    const sendButton = document.getElementById('sendButton');
+
+    let currentThinkingSection = null;
+    let currentAnswerSection = null;
+    let currentMessageContainer = null;
+    let currentAnswerText = '';
+
+    // 配置 marked 渲染
+    const renderer = new marked.Renderer();
+    marked.setOptions({
+        renderer: renderer,
+        highlight: function(code, lang) {
+            return hljs.highlightAuto(code).value;
+        },
+        breaks: true
+    });
+
+    // 自动增高输入框
+    messageInput.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = (this.scrollHeight) + 'px';
+    });
+
+    // 回车发送
+    messageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    function createAssistantMessage() {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant';
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        messageDiv.appendChild(contentDiv);
+        chatMessages.appendChild(messageDiv);
+        currentMessageContainer = contentDiv;
+        return messageDiv;
+    }
+
+    function createThinkingSection() {
+        if (!currentMessageContainer) createAssistantMessage();
+        const thinkingDiv = document.createElement('div');
+        thinkingDiv.className = 'thinking-section';
+        thinkingDiv.innerHTML = `
+            <div class="thinking-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+                <span>💭 思考过程</span>
+            </div>
+            <div class="thinking-content"></div>
+        `;
+        currentMessageContainer.appendChild(thinkingDiv);
+        currentThinkingSection = thinkingDiv.querySelector('.thinking-content');
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function createAnswerSection() {
+        if (!currentMessageContainer) createAssistantMessage();
+        const answerDiv = document.createElement('div');
+        answerDiv.className = 'answer-section';
+        currentMessageContainer.appendChild(answerDiv);
+        currentAnswerSection = answerDiv;
+        currentAnswerText = '';
+    }
+
+    async function sendMessage() {
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        // 用户消息显示
+        const userDiv = document.createElement('div');
+        userDiv.className = 'message user';
+        userDiv.innerHTML = `<div class="message-content">${message}</div>`;
+        chatMessages.appendChild(userDiv);
+
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+        sendButton.disabled = true;
+
+        // 重置状态
+        currentMessageContainer = null;
+        currentThinkingSection = null;
+        currentAnswerSection = null;
+        currentAnswerText = '';
+
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: message,
+                    model: document.getElementById('modelSelect').value
+                })
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let currentEventType = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('event:')) {
+                        currentEventType = line.substring(6).trim();
+                    } else if (line.startsWith('data:')) {
+                        const data = line.substring(5).trim();
+
+                        if (currentEventType === 'thinking') {
+                            if (!currentThinkingSection) createThinkingSection();
+                            currentThinkingSection.textContent += data;
+                        } else if (currentEventType === 'answer') {
+                            if (!currentAnswerSection) createAnswerSection();
+                            currentAnswerText += data;
+                            // 渲染 Markdown
+                            const rawHtml = marked.parse(currentAnswerText);
+                            currentAnswerSection.innerHTML = DOMPurify.sanitize(rawHtml);
+                            // 应用高亮
+                            currentAnswerSection.querySelectorAll('pre code').forEach((el) => {
+                                hljs.highlightElement(el);
+                            });
+                        }
+                    }
+                }
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+        } catch (error) {
+            console.error('Error:', error);
+        } finally {
+            sendButton.disabled = false;
+        }
+    }
+</script>
+</body>
+</html>
